@@ -1,1 +1,206 @@
-# gettoknowyou
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Getting to Know You</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #f5f5f5;
+      display: flex;
+      justify-content: center;
+      padding: 2rem;
+      min-height: 100vh;
+      margin: 0;
+    }
+    .container {
+      background: white;
+      max-width: 600px;
+      width: 100%;
+      padding: 2rem;
+      border-radius: 12px;
+      box-shadow: 0 2px 20px rgba(0,0,0,0.08);
+      height: fit-content;
+    }
+    h1 { margin-top: 0; color: #1a1a1a; }
+    .subtitle { color: #666; margin-bottom: 1.5rem; }
+    label { display: block; font-weight: 500; margin-bottom: 0.4rem; color: #333; }
+    input, textarea, select {
+      width: 100%;
+      padding: 0.7rem;
+      margin-bottom: 1rem;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-family: inherit;
+      background: white;
+    }
+    textarea { resize: vertical; min-height: 80px; }
+    button {
+      background: #1a73e8;
+      color: white;
+      border: none;
+      padding: 0.8rem 1.5rem;
+      border-radius: 8px;
+      font-size: 1rem;
+      cursor: pointer;
+      width: 100%;
+      font-weight: 500;
+    }
+    button:hover { background: #1557b0; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+    #status {
+      margin-top: 1rem;
+      padding: 0.8rem;
+      border-radius: 8px;
+      display: none;
+      font-size: 0.95rem;
+      white-space: pre-wrap;
+      line-height: 1.5;
+    }
+    .success { background: #e6f4ea; color: #137333; display: block; }
+    .error { background: #fce8e6; color: #c5221f; display: block; }
+    .info { background: #e8f0fe; color: #1967d2; display: block; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>Getting to Know You</h1>
+  <p class="subtitle">Five quick questions. Just the basics.</p>
+
+  <form id="surveyForm">
+    <!-- Q1: Name -->
+    <label for="name">1. What is your name?</label>
+    <input type="text" id="name" name="name" required placeholder="Your name">
+
+    <!-- Q2: Favorite Color -->
+    <label for="favoriteColor">2. What is your favorite color?</label>
+    <input type="text" id="favoriteColor" name="favoriteColor" required placeholder="e.g. Blue, Green, Purple">
+
+    <!-- Q3: Favorite Sport -->
+    <label for="favoriteSport">3. What is your favorite sport?</label>
+    <input type="text" id="favoriteSport" name="favoriteSport" required placeholder="e.g. Basketball, Soccer, Swimming">
+
+    <!-- Q4: Hobbies -->
+    <label for="hobbies">4. What are your hobbies?</label>
+    <textarea id="hobbies" name="hobbies" required placeholder="e.g. Reading, gaming, hiking, cooking..."></textarea>
+
+    <!-- Q5: Favorite Food -->
+    <label for="favoriteFood">5. What is your favorite food?</label>
+    <input type="text" id="favoriteFood" name="favoriteFood" required placeholder="e.g. Pizza, Sushi, Tacos">
+
+    <button type="submit" id="submitBtn">Submit</button>
+  </form>
+
+  <div id="status"></div>
+</div>
+
+<script>
+  // ============================================================
+  // CONFIGURATION — REPLACE THESE VALUES
+  // ============================================================
+
+  // 1. Google Apps Script Web App URL (from Google Sheets setup below)
+  const APPS_SCRIPT_URL = 'YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
+
+  // 2. Your Gemini API key from Google AI Studio
+  //    IMPORTANT: Restrict the key in Google Cloud Console (see notes below).
+  const GEMINI_API_KEY = 'YOUR_GEMINI_API_KEY_HERE';
+
+  // 3. Gemini model to use
+  const GEMINI_MODEL = 'gemini-2.5-flash';
+
+  // ============================================================
+
+  const form = document.getElementById('surveyForm');
+  const statusDiv = document.getElementById('status');
+  const submitBtn = document.getElementById('submitBtn');
+
+  function showStatus(message, type) {
+    statusDiv.textContent = message;
+    statusDiv.className = type;
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    submitBtn.disabled = true;
+    showStatus('Submitting your answers...', 'info');
+
+    // Gather form data
+    const formData = new FormData(form);
+    const data = {
+      name: formData.get('name'),
+      favoriteColor: formData.get('favoriteColor'),
+      favoriteSport: formData.get('favoriteSport'),
+      hobbies: formData.get('hobbies'),
+      favoriteFood: formData.get('favoriteFood'),
+      timestamp: new Date().toISOString()
+    };
+
+    // Step 1: Send to Google Sheets
+    try {
+      await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        mode: 'no-cors', // Required for Apps Script from static HTML
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      console.log('Sheet submission attempted:', data);
+    } catch (err) {
+      showStatus('Could not save to Google Sheets. ' + err.message, 'error');
+      submitBtn.disabled = false;
+      return;
+    }
+
+    // Step 2: Call Gemini API for a personalized insight
+    showStatus('Generating your personalized insight...', 'info');
+
+    try {
+      const prompt = `You are analyzing a fun "getting to know you" survey. Based on these answers, 
+write a short (2-3 sentence) warm and playful insight about this person. 
+Reference their actual answers. Be specific and friendly.
+
+Name: ${data.name}
+Favorite Color: ${data.favoriteColor}
+Favorite Sport: ${data.favoriteSport}
+Hobbies: ${data.hobbies}
+Favorite Food: ${data.favoriteFood}`;
+
+      const geminiResponse = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{ text: prompt }]
+            }]
+          })
+        }
+      );
+
+      if (!geminiResponse.ok) {
+        throw new Error(`Gemini API error: ${geminiResponse.status}`);
+      }
+
+      const result = await geminiResponse.json();
+      const insight = result.candidates?.[0]?.content?.parts?.[0]?.text || 'No insight generated.';
+
+      showStatus(`✓ Thanks, ${data.name}! Here is your insight:\n\n${insight}`, 'success');
+      form.reset();
+
+    } catch (err) {
+      console.error('Gemini error:', err);
+      showStatus(`✓ Answers saved! (AI insight unavailable: ${err.message})`, 'success');
+      form.reset();
+    }
+
+    submitBtn.disabled = false;
+  });
+</script>
+
+</body>
+</html>
