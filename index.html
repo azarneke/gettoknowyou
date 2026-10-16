@@ -1,119 +1,321 @@
-// ============================================================
-// CONFIGURATION
-// ============================================================
-const GEMINI_API_KEY = 'PASTE_YOUR_GEMINI_API_KEY_HERE'.trim();
-const GEMINI_MODEL   = 'gemini-3.8-flash';
-const SHEET_NAME     = 'Sheet1';
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Getting to Know You</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #f5f5f5;
+      display: flex;
+      justify-content: center;
+      padding: 2rem;
+      min-height: 100vh;
+      margin: 0;
+    }
+    .container {
+      background: white;
+      max-width: 600px;
+      width: 100%;
+      padding: 2rem;
+      border-radius: 12px;
+      box-shadow: 0 2px 20px rgba(0,0,0,0.08);
+      height: fit-content;
+    }
+    h1 { margin-top: 0; color: #1a1a1a; }
+    .subtitle { color: #666; margin-bottom: 1.5rem; }
+    label { display: block; font-weight: 500; margin-bottom: 0.4rem; color: #333; }
+    input, textarea {
+      width: 100%;
+      padding: 0.7rem;
+      margin-bottom: 1rem;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-family: inherit;
+      background: white;
+    }
+    textarea { resize: vertical; min-height: 90px; }
+    button {
+      background: #1a73e8;
+      color: white;
+      border: none;
+      padding: 0.8rem 1.5rem;
+      border-radius: 8px;
+      font-size: 1rem;
+      cursor: pointer;
+      width: 100%;
+      font-weight: 500;
+      transition: background 0.15s;
+    }
+    button:hover:not(:disabled) { background: #1557b0; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
 
-const HEADERS = [
-  'timestamp',
-  'name',
-  'favoriteColor',
-  'favoriteSport',
-  'favoriteFood',
-  'hobbies'
-];
-// ============================================================
-
-
-function doPost(e) {
-  try {
-    const data = JSON.parse(e.postData.contents);
-
-    // ---- Route 1: analysis only (no sheet write) ----
-    if (data.action === 'analyze') {
-      let aiInsight = '';
-      try {
-        aiInsight = getHobbyInsight(data.hobbies);
-      } catch (err) {
-        aiInsight = '(AI analysis unavailable: ' + err.message + ')';
-      }
-      return jsonResponse({ result: 'success', aiInsight: aiInsight });
+    /* Secondary button for AI insight */
+    .btn-secondary {
+      background: white;
+      color: #1a73e8;
+      border: 1px solid #1a73e8;
+      margin-top: 0.6rem;
+    }
+    .btn-secondary:hover:not(:disabled) {
+      background: #f0f5ff;
     }
 
-    // ---- Route 2: submit (write row to sheet) ----
-    const sheet = getOrCreateSheet();
-    const newRow = HEADERS.map(header => {
-      if (header === 'timestamp') return data.timestamp || new Date().toISOString();
-      return data[header] || '';
-    });
-    sheet.appendRow(newRow);
-
-    return jsonResponse({ result: 'success' });
-
-  } catch (err) {
-    return jsonResponse({ result: 'error', message: err.toString() });
-  }
-}
-
-
-function jsonResponse(obj) {
-  return ContentService
-    .createTextOutput(JSON.stringify(obj))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-
-function getOrCreateSheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = ss.getSheetByName(SHEET_NAME);
-
-  if (!sheet) sheet = ss.insertSheet(SHEET_NAME);
-
-  const firstCell = sheet.getRange(1, 1).getValue();
-  if (firstCell === '') {
-    sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
-    sheet.getRange(1, 1, 1, HEADERS.length)
-         .setFontWeight('bold')
-         .setBackground('#f1f3f4');
-    sheet.setFrozenRows(1);
-  }
-
-  return sheet;
-}
-
-
-function getHobbyInsight(hobbies) {
-  if (!hobbies || hobbies.trim() === '') return '(no hobbies provided)';
-
-  const prompt =
-    'Analyze this person\'s hobbies and produce a single concise sentence ' +
-    '(under 25 words) describing what kind of person they are. ' +
-    'Be warm and specific.\n\nHobbies: ' + hobbies;
-
-  const url = 'https://generativelanguage.googleapis.com/v1beta/interactions';
-
-  const options = {
-    method: 'post',
-    contentType: 'application/json',
-    headers: { 'x-goog-api-key': GEMINI_API_KEY },
-    payload: JSON.stringify({ model: GEMINI_MODEL, input: prompt }),
-    muteHttpExceptions: true
-  };
-
-  const response = UrlFetchApp.fetch(url, options);
-  const code = response.getResponseCode();
-  const body = response.getContentText();
-
-  if (code !== 200) throw new Error('Gemini HTTP ' + code + ': ' + body);
-
-  const json = JSON.parse(body);
-  const steps = json.steps || [];
-  for (let i = 0; i < steps.length; i++) {
-    const step = steps[i];
-    if (step.type === 'model_output' && step.content) {
-      for (let j = 0; j < step.content.length; j++) {
-        const c = step.content[j];
-        if (c.type === 'text' && c.text) return c.text.trim();
-      }
+    #status {
+      margin-top: 1rem;
+      padding: 0.8rem;
+      border-radius: 8px;
+      display: none;
+      font-size: 0.95rem;
+      line-height: 1.5;
     }
+    .success { background: #e6f4ea; color: #137333; display: block; }
+    .error   { background: #fce8e6; color: #c5221f; display: block; }
+    .info    { background: #e8f0fe; color: #1967d2; display: block; }
+
+    .ai-badge {
+      display: inline-block;
+      background: #e8f0fe;
+      color: #1967d2;
+      font-size: 0.75rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      margin-left: 0.4rem;
+      font-weight: 500;
+      vertical-align: middle;
+    }
+
+    /* AI insight card */
+    .insight-card {
+      margin-top: 0.8rem;
+      padding: 1rem 1.1rem;
+      background: #f8f9ff;
+      border-left: 3px solid #1a73e8;
+      border-radius: 6px;
+      display: none;
+      animation: fadeIn 0.25s ease;
+    }
+    .insight-card.visible { display: block; }
+    .insight-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: #1967d2;
+      margin-bottom: 0.4rem;
+    }
+    .insight-text {
+      font-size: 0.95rem;
+      color: #1a1a1a;
+      line-height: 1.55;
+      white-space: pre-wrap;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Loading dots inside the insight card */
+    .loading-dots::after {
+      content: '';
+      animation: dots 1.2s steps(4, end) infinite;
+    }
+    @keyframes dots {
+      0%   { content: ''; }
+      25%  { content: '.'; }
+      50%  { content: '..'; }
+      75%  { content: '...'; }
+      100% { content: ''; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>Getting to Know You</h1>
+  <p class="subtitle">Five quick questions. Just the basics.</p>
+
+  <form id="surveyForm">
+    <label for="name">1. What is your name?</label>
+    <input type="text" id="name" name="name" required placeholder="Your name">
+
+    <label for="favoriteColor">2. What is your favorite color?</label>
+    <input type="text" id="favoriteColor" name="favoriteColor" required placeholder="e.g. Blue, Green, Purple">
+
+    <label for="favoriteSport">3. What is your favorite sport?</label>
+    <input type="text" id="favoriteSport" name="favoriteSport" required placeholder="e.g. Basketball, Soccer, Swimming">
+
+    <label for="favoriteFood">4. What is your favorite food?</label>
+    <input type="text" id="favoriteFood" name="favoriteFood" required placeholder="e.g. Pizza, Sushi, Tacos">
+
+    <label for="hobbies">
+      5. What are your hobbies?
+      <span class="ai-badge">AI-analyzed</span>
+    </label>
+    <textarea id="hobbies" name="hobbies" required placeholder="Tell me about what you love to do..."></textarea>
+
+    <button type="submit" id="submitBtn">Submit</button>
+
+    <!-- Button to reveal the AI insight -->
+    <button type="button" id="insightBtn" class="btn-secondary" disabled>
+      Show my AI insight
+    </button>
+  </form>
+
+  <div id="status"></div>
+
+  <!-- AI insight card -->
+  <div id="insightCard" class="insight-card">
+    <div class="insight-label">AI insight on your hobbies</div>
+    <div class="insight-text" id="insightText"></div>
+  </div>
+</div>
+
+<script>
+  // ============================================================
+  // CONFIGURATION
+  // The Gemini API key lives in Apps Script — never in this file.
+  // ============================================================
+  const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxVDeBW7b4DAHmN7TYRSMN_S8m6_aTFdFfjGlu2UxMK0npKFs5-hxS4JFQdu8nxoIBL/exec';
+  // ============================================================
+
+  const form        = document.getElementById('surveyForm');
+  const statusDiv   = document.getElementById('status');
+  const submitBtn   = document.getElementById('submitBtn');
+  const insightBtn  = document.getElementById('insightBtn');
+  const insightCard = document.getElementById('insightCard');
+  const insightText = document.getElementById('insightText');
+
+  // Store the hobbies text from the last successful submit
+  // so the insight button can reuse it without needing the form.
+  let lastSubmission = null;
+
+  // Safe HTML escaping
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
-  return '(no insight generated)';
-}
 
+  function showStatus(message, type) {
+    statusDiv.textContent = message;
+    statusDiv.className = type;
+  }
 
-// Optional helpers (run manually from the editor if you want)
-function setupSheet()    { getOrCreateSheet(); }
-function testGeminiKey() {
-  Logger.log('Gemini says: ' + getHobbyInsight('reading sci-fi and rock climbing'));
-}
+  function showInsightCard(text) {
+    insightText.textContent = text;
+    insightCard.classList.add('visible');
+  }
+
+  function hideInsightCard() {
+    insightCard.classList.remove('visible');
+    insightText.textContent = '';
+  }
+
+  // ------------------------------------------------------------
+  // SUBMIT — saves the answers to the sheet
+  // ------------------------------------------------------------
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    submitBtn.disabled = true;
+    insightBtn.disabled = true;
+    hideInsightCard();
+    showStatus('Submitting your answers...', 'info');
+
+    const formData = new FormData(form);
+    const data = {
+      action:        'submit',   // tells Apps Script to save the row
+      timestamp:     new Date().toISOString(),
+      name:          formData.get('name'),
+      favoriteColor: formData.get('favoriteColor'),
+      favoriteSport: formData.get('favoriteSport'),
+      favoriteFood:  formData.get('favoriteFood'),
+      hobbies:       formData.get('hobbies')
+    };
+
+    try {
+      const response = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(data)
+      });
+
+      const result = await response.json();
+
+      if (result.result === 'success') {
+        showStatus(`✓ Thanks, ${data.name}! Your answers were saved.`, 'success');
+
+        // Remember this submission so the insight button can use it
+        lastSubmission = data;
+
+        // Enable the "Show my AI insight" button
+        insightBtn.disabled = false;
+
+      } else {
+        showStatus('Server error: ' + (result.message || 'unknown'), 'error');
+      }
+
+    } catch (err) {
+      showStatus('Could not submit. ' + err.message, 'error');
+    }
+
+    submitBtn.disabled = false;
+  });
+
+  // ------------------------------------------------------------
+  // SHOW INSIGHT — asks Apps Script to run Gemini on the hobbies
+  // ------------------------------------------------------------
+  insightBtn.addEventListener('click', async () => {
+    if (!lastSubmission) return;
+
+    // If the card is already visible, hide it (acts as toggle)
+    if (insightCard.classList.contains('visible')) {
+      hideInsightCard();
+      insightBtn.textContent = 'Show my AI insight';
+      return;
+    }
+
+    insightBtn.disabled = true;
+    insightBtn.textContent = 'Analyzing...';
+
+    // Show a loading placeholder inside the card
+    insightCard.classList.add('visible');
+    insightText.innerHTML = '<span class="loading-dots">Thinking</span>';
+
+    try {
+      const response = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action:  'analyze',        // tells Apps Script NOT to save a row
+          hobbies: lastSubmission.hobbies
+        })
+      });
+
+      const result = await response.json();
+
+      if (result.result === 'success') {
+        insightText.textContent = result.aiInsight || '(no insight generated)';
+        insightBtn.textContent = 'Hide my AI insight';
+      } else {
+        insightText.textContent = 'Error: ' + (result.message || 'unknown');
+        insightBtn.textContent = 'Try again';
+      }
+
+    } catch (err) {
+      insightText.textContent = 'Could not get insight: ' + err.message;
+      insightBtn.textContent = 'Try again';
+    }
+
+    insightBtn.disabled = false;
+  });
+</script>
+
+</body>
+</html>
