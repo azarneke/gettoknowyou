@@ -27,7 +27,7 @@
     h1 { margin-top: 0; color: #1a1a1a; }
     .subtitle { color: #666; margin-bottom: 1.5rem; }
     label { display: block; font-weight: 500; margin-bottom: 0.4rem; color: #333; }
-    input, textarea, select {
+    input, textarea {
       width: 100%;
       padding: 0.7rem;
       margin-bottom: 1rem;
@@ -37,7 +37,7 @@
       font-family: inherit;
       background: white;
     }
-    textarea { resize: vertical; min-height: 80px; }
+    textarea { resize: vertical; min-height: 90px; }
     button {
       background: #1a73e8;
       color: white;
@@ -61,8 +61,19 @@
       line-height: 1.5;
     }
     .success { background: #e6f4ea; color: #137333; display: block; }
-    .error { background: #fce8e6; color: #c5221f; display: block; }
-    .info { background: #e8f0fe; color: #1967d2; display: block; }
+    .error   { background: #fce8e6; color: #c5221f; display: block; }
+    .info    { background: #e8f0fe; color: #1967d2; display: block; }
+    .ai-badge {
+      display: inline-block;
+      background: #e8f0fe;
+      color: #1967d2;
+      font-size: 0.75rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      margin-left: 0.4rem;
+      font-weight: 500;
+      vertical-align: middle;
+    }
   </style>
 </head>
 <body>
@@ -72,25 +83,23 @@
   <p class="subtitle">Five quick questions. Just the basics.</p>
 
   <form id="surveyForm">
-    <!-- Q1: Name -->
     <label for="name">1. What is your name?</label>
     <input type="text" id="name" name="name" required placeholder="Your name">
 
-    <!-- Q2: Favorite Color -->
     <label for="favoriteColor">2. What is your favorite color?</label>
     <input type="text" id="favoriteColor" name="favoriteColor" required placeholder="e.g. Blue, Green, Purple">
 
-    <!-- Q3: Favorite Sport -->
     <label for="favoriteSport">3. What is your favorite sport?</label>
     <input type="text" id="favoriteSport" name="favoriteSport" required placeholder="e.g. Basketball, Soccer, Swimming">
 
-    <!-- Q4: Hobbies -->
-    <label for="hobbies">4. What are your hobbies?</label>
-    <textarea id="hobbies" name="hobbies" required placeholder="e.g. Reading, gaming, hiking, cooking..."></textarea>
-
-    <!-- Q5: Favorite Food -->
-    <label for="favoriteFood">5. What is your favorite food?</label>
+    <label for="favoriteFood">4. What is your favorite food?</label>
     <input type="text" id="favoriteFood" name="favoriteFood" required placeholder="e.g. Pizza, Sushi, Tacos">
+
+    <label for="hobbies">
+      5. What are your hobbies?
+      <span class="ai-badge">AI-analyzed</span>
+    </label>
+    <textarea id="hobbies" name="hobbies" required placeholder="Tell me about what you love to do..."></textarea>
 
     <button type="submit" id="submitBtn">Submit</button>
   </form>
@@ -100,19 +109,11 @@
 
 <script>
   // ============================================================
-  // CONFIGURATION — REPLACE THESE VALUES
+  // CONFIGURATION
+  // Only ONE value needed here — the Apps Script Web App URL.
+  // The Gemini API key lives in Apps Script, not in this file.
   // ============================================================
-
-  // 1. Google Apps Script Web App URL (from Google Sheets setup below)
   const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxVDeBW7b4DAHmN7TYRSMN_S8m6_aTFdFfjGlu2UxMK0npKFs5-hxS4JFQdu8nxoIBL/exec';
-
-  // 2. Your Gemini API key from Google AI Studio
-  //    IMPORTANT: Restrict the key in Google Cloud Console (see notes below).
-  const GEMINI_API_KEY = '';
-
-  // 3. Gemini model to use
-  const GEMINI_MODEL = 'gemini-2.5-flash';
-
   // ============================================================
 
   const form = document.getElementById('surveyForm');
@@ -129,73 +130,39 @@
     submitBtn.disabled = true;
     showStatus('Submitting your answers...', 'info');
 
-    // Gather form data
     const formData = new FormData(form);
     const data = {
-      name: formData.get('name'),
+      timestamp:     new Date().toISOString(),
+      name:          formData.get('name'),
       favoriteColor: formData.get('favoriteColor'),
       favoriteSport: formData.get('favoriteSport'),
-      hobbies: formData.get('hobbies'),
-      favoriteFood: formData.get('favoriteFood'),
-      timestamp: new Date().toISOString()
+      favoriteFood:  formData.get('favoriteFood'),
+      hobbies:       formData.get('hobbies')
     };
 
-    // Step 1: Send to Google Sheets
     try {
-      await fetch(APPS_SCRIPT_URL, {
+      // text/plain avoids a CORS preflight with Apps Script
+      const response = await fetch(APPS_SCRIPT_URL, {
         method: 'POST',
-        mode: 'no-cors', // Required for Apps Script from static HTML
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify(data)
       });
-      console.log('Sheet submission attempted:', data);
-    } catch (err) {
-      showStatus('Could not save to Google Sheets. ' + err.message, 'error');
-      submitBtn.disabled = false;
-      return;
-    }
 
-    // Step 2: Call Gemini API for a personalized insight
-    showStatus('Generating your personalized insight...', 'info');
+      const result = await response.json();
 
-    try {
-      const prompt = `You are analyzing a fun "getting to know you" survey. Based on these answers, 
-write a short (2-3 sentence) warm and playful insight about this person. 
-Reference their actual answers. Be specific and friendly.
-
-Name: ${data.name}
-Favorite Color: ${data.favoriteColor}
-Favorite Sport: ${data.favoriteSport}
-Hobbies: ${data.hobbies}
-Favorite Food: ${data.favoriteFood}`;
-
-      const geminiResponse = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              parts: [{ text: prompt }]
-            }]
-          })
-        }
-      );
-
-      if (!geminiResponse.ok) {
-        throw new Error(`Gemini API error: ${geminiResponse.status}`);
+      if (result.result === 'success') {
+        showStatus(
+          `✓ Thanks, ${data.name}! Your answers were saved.\n\n` +
+          `AI insight on your hobbies: ${result.aiInsight || '(none)'}`,
+          'success'
+        );
+        form.reset();
+      } else {
+        showStatus('Server error: ' + (result.message || 'unknown'), 'error');
       }
 
-      const result = await geminiResponse.json();
-      const insight = result.candidates?.[0]?.content?.parts?.[0]?.text || 'No insight generated.';
-
-      showStatus(`✓ Thanks, ${data.name}! Here is your insight:\n\n${insight}`, 'success');
-      form.reset();
-
     } catch (err) {
-      console.error('Gemini error:', err);
-      showStatus(`✓ Answers saved! (AI insight unavailable: ${err.message})`, 'success');
-      form.reset();
+      showStatus('Could not submit. ' + err.message, 'error');
     }
 
     submitBtn.disabled = false;
