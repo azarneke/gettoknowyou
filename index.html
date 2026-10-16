@@ -17,7 +17,7 @@
     }
     .container {
       background: white;
-      max-width: 600px;
+      max-width: 620px;
       width: 100%;
       padding: 2rem;
       border-radius: 12px;
@@ -53,16 +53,13 @@
     button:hover:not(:disabled) { background: #1557b0; }
     button:disabled { background: #ccc; cursor: not-allowed; }
 
-    /* Secondary button for AI insight */
     .btn-secondary {
       background: white;
       color: #1a73e8;
       border: 1px solid #1a73e8;
       margin-top: 0.6rem;
     }
-    .btn-secondary:hover:not(:disabled) {
-      background: #f0f5ff;
-    }
+    .btn-secondary:hover:not(:disabled) { background: #f0f5ff; }
 
     #status {
       margin-top: 1rem;
@@ -88,37 +85,64 @@
       vertical-align: middle;
     }
 
-    /* AI insight card */
-    .insight-card {
-      margin-top: 0.8rem;
-      padding: 1rem 1.1rem;
-      background: #f8f9ff;
-      border-left: 3px solid #1a73e8;
-      border-radius: 6px;
+    /* ---- Insight panel ---- */
+    .insight-panel {
+      margin-top: 1rem;
       display: none;
       animation: fadeIn 0.25s ease;
     }
-    .insight-card.visible { display: block; }
-    .insight-label {
+    .insight-panel.visible { display: block; }
+
+    .insight-section-title {
       font-size: 0.75rem;
       font-weight: 600;
-      letter-spacing: 0.05em;
+      letter-spacing: 0.06em;
       text-transform: uppercase;
       color: #1967d2;
-      margin-bottom: 0.4rem;
+      margin: 1rem 0 0.5rem 0;
     }
-    .insight-text {
-      font-size: 0.95rem;
+    .insight-section-title:first-child { margin-top: 0; }
+
+    .qa-item {
+      padding: 0.75rem 1rem;
+      background: #f8f9ff;
+      border-left: 3px solid #c9d9ff;
+      border-radius: 6px;
+      margin-bottom: 0.6rem;
+    }
+    .qa-question {
+      font-size: 0.8rem;
+      color: #666;
+      margin-bottom: 0.25rem;
+    }
+    .qa-answer {
+      font-size: 0.9rem;
       color: #1a1a1a;
+      margin-bottom: 0.35rem;
+      font-weight: 500;
+    }
+    .qa-analysis {
+      font-size: 0.875rem;
+      color: #1967d2;
+      line-height: 1.5;
+    }
+
+    .overall-card {
+      padding: 1rem 1.1rem;
+      background: #eef3ff;
+      border-left: 3px solid #1a73e8;
+      border-radius: 6px;
+      font-size: 0.95rem;
       line-height: 1.55;
+      color: #1a1a1a;
       white-space: pre-wrap;
     }
+
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(-4px); }
       to   { opacity: 1; transform: translateY(0); }
     }
 
-    /* Loading dots inside the insight card */
     .loading-dots::after {
       content: '';
       animation: dots 1.2s steps(4, end) infinite;
@@ -159,18 +183,20 @@
 
     <button type="submit" id="submitBtn">Submit</button>
 
-    <!-- Button to reveal the AI insight -->
     <button type="button" id="insightBtn" class="btn-secondary" disabled>
-      Show my AI insight
+      Show my AI analysis
     </button>
   </form>
 
   <div id="status"></div>
 
-  <!-- AI insight card -->
-  <div id="insightCard" class="insight-card">
-    <div class="insight-label">AI insight on your hobbies</div>
-    <div class="insight-text" id="insightText"></div>
+  <!-- AI insight panel: per-question + overall -->
+  <div id="insightPanel" class="insight-panel">
+    <div class="insight-section-title">Question-by-question analysis</div>
+    <div id="perQuestionContainer"></div>
+
+    <div class="insight-section-title">Overall summary</div>
+    <div class="overall-card" id="overallText"></div>
   </div>
 </div>
 
@@ -182,18 +208,26 @@
   const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxVDeBW7b4DAHmN7TYRSMN_S8m6_aTFdFfjGlu2UxMK0npKFs5-hxS4JFQdu8nxoIBL/exec';
   // ============================================================
 
-  const form        = document.getElementById('surveyForm');
-  const statusDiv   = document.getElementById('status');
-  const submitBtn   = document.getElementById('submitBtn');
-  const insightBtn  = document.getElementById('insightBtn');
-  const insightCard = document.getElementById('insightCard');
-  const insightText = document.getElementById('insightText');
+  const form                = document.getElementById('surveyForm');
+  const statusDiv           = document.getElementById('status');
+  const submitBtn           = document.getElementById('submitBtn');
+  const insightBtn          = document.getElementById('insightBtn');
+  const insightPanel        = document.getElementById('insightPanel');
+  const perQuestionContainer= document.getElementById('perQuestionContainer');
+  const overallText         = document.getElementById('overallText');
 
-  // Store the hobbies text from the last successful submit
-  // so the insight button can reuse it without needing the form.
+  // Keep the last submission so the analysis button can reuse it
   let lastSubmission = null;
 
-  // Safe HTML escaping
+  // Friendly labels for the questions (used in the analysis card)
+  const QUESTION_LABELS = {
+    name:          'Name',
+    favoriteColor: 'Favorite color',
+    favoriteSport: 'Favorite sport',
+    favoriteFood:  'Favorite food',
+    hobbies:       'Hobbies'
+  };
+
   function escapeHtml(str) {
     return String(str)
       .replace(/&/g, '&amp;')
@@ -208,29 +242,25 @@
     statusDiv.className = type;
   }
 
-  function showInsightCard(text) {
-    insightText.textContent = text;
-    insightCard.classList.add('visible');
-  }
-
-  function hideInsightCard() {
-    insightCard.classList.remove('visible');
-    insightText.textContent = '';
+  function hideInsightPanel() {
+    insightPanel.classList.remove('visible');
+    perQuestionContainer.innerHTML = '';
+    overallText.textContent = '';
   }
 
   // ------------------------------------------------------------
-  // SUBMIT — saves the answers to the sheet
+  // SUBMIT — saves the raw answers to the sheet
   // ------------------------------------------------------------
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     submitBtn.disabled = true;
     insightBtn.disabled = true;
-    hideInsightCard();
+    hideInsightPanel();
     showStatus('Submitting your answers...', 'info');
 
     const formData = new FormData(form);
     const data = {
-      action:        'submit',   // tells Apps Script to save the row
+      action:        'submit',
       timestamp:     new Date().toISOString(),
       name:          formData.get('name'),
       favoriteColor: formData.get('favoriteColor'),
@@ -250,17 +280,11 @@
 
       if (result.result === 'success') {
         showStatus(`✓ Thanks, ${data.name}! Your answers were saved.`, 'success');
-
-        // Remember this submission so the insight button can use it
         lastSubmission = data;
-
-        // Enable the "Show my AI insight" button
         insightBtn.disabled = false;
-
       } else {
         showStatus('Server error: ' + (result.message || 'unknown'), 'error');
       }
-
     } catch (err) {
       showStatus('Could not submit. ' + err.message, 'error');
     }
@@ -269,52 +293,82 @@
   });
 
   // ------------------------------------------------------------
-  // SHOW INSIGHT — asks Apps Script to run Gemini on the hobbies
+  // SHOW ANALYSIS — per-question + overall
   // ------------------------------------------------------------
   insightBtn.addEventListener('click', async () => {
     if (!lastSubmission) return;
 
-    // If the card is already visible, hide it (acts as toggle)
-    if (insightCard.classList.contains('visible')) {
-      hideInsightCard();
-      insightBtn.textContent = 'Show my AI insight';
+    // Toggle off if already visible
+    if (insightPanel.classList.contains('visible')) {
+      hideInsightPanel();
+      insightBtn.textContent = 'Show my AI analysis';
       return;
     }
 
     insightBtn.disabled = true;
     insightBtn.textContent = 'Analyzing...';
 
-    // Show a loading placeholder inside the card
-    insightCard.classList.add('visible');
-    insightText.innerHTML = '<span class="loading-dots">Thinking</span>';
+    // Show loading placeholder
+    insightPanel.classList.add('visible');
+    perQuestionContainer.innerHTML =
+      '<div class="qa-item"><div class="qa-analysis">' +
+      '<span class="loading-dots">Analyzing each answer</span>' +
+      '</div></div>';
+    overallText.innerHTML = '<span class="loading-dots">Writing summary</span>';
 
     try {
       const response = await fetch(APPS_SCRIPT_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
-          action:  'analyze',        // tells Apps Script NOT to save a row
-          hobbies: lastSubmission.hobbies
+          action:        'analyze',
+          name:          lastSubmission.name,
+          favoriteColor: lastSubmission.favoriteColor,
+          favoriteSport: lastSubmission.favoriteSport,
+          favoriteFood:  lastSubmission.favoriteFood,
+          hobbies:       lastSubmission.hobbies
         })
       });
 
       const result = await response.json();
 
       if (result.result === 'success') {
-        insightText.textContent = result.aiInsight || '(no insight generated)';
-        insightBtn.textContent = 'Hide my AI insight';
+        renderAnalysis(result.analyses || [], result.overall || '');
+        insightBtn.textContent = 'Hide my AI analysis';
       } else {
-        insightText.textContent = 'Error: ' + (result.message || 'unknown');
+        perQuestionContainer.innerHTML =
+          '<div class="qa-item"><div class="qa-analysis">Error: ' +
+          escapeHtml(result.message || 'unknown') + '</div></div>';
+        overallText.textContent = '';
         insightBtn.textContent = 'Try again';
       }
-
     } catch (err) {
-      insightText.textContent = 'Could not get insight: ' + err.message;
+      perQuestionContainer.innerHTML =
+        '<div class="qa-item"><div class="qa-analysis">Could not get analysis: ' +
+        escapeHtml(err.message) + '</div></div>';
+      overallText.textContent = '';
       insightBtn.textContent = 'Try again';
     }
 
     insightBtn.disabled = false;
   });
+
+  // Renders the per-question cards + the overall paragraph
+  function renderAnalysis(analyses, overall) {
+    perQuestionContainer.innerHTML = '';
+
+    analyses.forEach(item => {
+      const card = document.createElement('div');
+      card.className = 'qa-item';
+      card.innerHTML =
+        '<div class="qa-question">' + escapeHtml(QUESTION_LABELS[item.field] || item.field) + '</div>' +
+        '<div class="qa-answer">' + escapeHtml(item.answer || '') + '</div>' +
+        '<div class="qa-analysis">' + escapeHtml(item.analysis || '') + '</div>';
+      perQuestionContainer.appendChild(card);
+    });
+
+    overallText.textContent = overall || '(no summary generated)';
+  }
 </script>
 
 </body>
